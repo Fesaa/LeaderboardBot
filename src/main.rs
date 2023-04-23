@@ -42,7 +42,7 @@ impl EventHandler for Bot {
             return;
         }
 
-        let register_type = msg.content.strip_prefix("?sync").unwrap_or("*");
+        let register_type = msg.content.strip_prefix("?sync ").unwrap_or("*");
         match register_type {
             "*" => {
                 let guild_id = GuildId(781938561175388190);
@@ -52,7 +52,11 @@ impl EventHandler for Bot {
                         .create_application_command(|command| commands::register(command))
                 })
                 .await {
-                    Ok(_) => (),
+                    Ok(v) => {
+                        let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
+                            format!("Synced {} commands to the guild.", v.len())
+                        )).await;
+                    },
                     Err(err) => {
                         let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
                     }
@@ -63,7 +67,11 @@ impl EventHandler for Bot {
                     commands::register(command)
                 })
                 .await {
-                    Ok(_) => (),
+                    Ok(_) => {
+                        let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
+                            format!("Synced commands globally.")
+                        )).await;
+                    },
                     Err(err) => {
                         let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
                     }
@@ -88,7 +96,7 @@ async fn main() {
     
     let token = "";
 
-    let mut client = Client::builder(token, GatewayIntents::empty())
+    let mut client = Client::builder(token, GatewayIntents::DIRECT_MESSAGES)
         .event_handler(Bot {db: pool.clone(), owner_ids: vec![474319793042751491, 322007790208155650]})
         .await
         .expect("Error creating client");
