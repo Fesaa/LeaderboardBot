@@ -145,12 +145,6 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
                     valid = TRUE
                 AND
                     game = $1)
-            AND
-                position
-            BETWEEN
-                $2
-            AND
-                $3
             ORDER BY
                 position
             ASC;")
