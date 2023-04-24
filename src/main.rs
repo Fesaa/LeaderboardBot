@@ -129,46 +129,72 @@ impl EventHandler for Bot {
 
     async fn message(&self, ctx: Context, msg: Message) {
         if !self.owner_ids.contains(&msg.author.id.as_u64()) 
-        && !msg.content.starts_with("?sync"){
+        && !msg.content.starts_with("?"){
             return;
         }
 
-        let register_type = msg.content.strip_prefix("?sync ").unwrap_or("*");
-        match register_type {
-            "*" => {
-                let guild_id = GuildId(781938561175388190);
+        if msg.content.starts_with("?sync") {
+            let register_type = msg.content.strip_prefix("?sync ").unwrap_or("*");
+            match register_type {
+                "*" => {
+                    let guild_id = GuildId(781938561175388190);
 
-                match GuildId::set_application_commands(&guild_id, &ctx.http, |commands| {
-                    commands
-                        .create_application_command(|command| commands::register(command))
-                })
-                .await {
-                    Ok(v) => {
-                        let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
-                            format!("Synced {} commands to the guild.", v.len())
-                        )).await;
-                    },
-                    Err(err) => {
-                        let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
-                    }
-                };
-            },
-            "~" => {
-                match Command::create_global_application_command(&ctx.http, |command| {
-                    commands::register(command)
-                })
-                .await {
-                    Ok(_) => {
-                        let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
-                            format!("Synced commands globally.")
-                        )).await;
-                    },
-                    Err(err) => {
-                        let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
-                    }
-                };
-            },
-            &_ => {}
+                    match GuildId::set_application_commands(&guild_id, &ctx.http, |commands| {
+                        commands
+                            .create_application_command(|command| commands::register(command))
+                    })
+                    .await {
+                        Ok(v) => {
+                            let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
+                                format!("Synced {} commands to the guild.", v.len())
+                            )).await;
+                        },
+                        Err(err) => {
+                            let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
+                        }
+                    };
+                },
+                "~" => {
+                    match Command::create_global_application_command(&ctx.http, |command| {
+                        commands::register(command)
+                    })
+                    .await {
+                        Ok(_) => {
+                            let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
+                                "Synced commands globally."
+                            )).await;
+                        },
+                        Err(err) => {
+                            let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
+                        }
+                    };
+                },
+                &_ => {}
+            }
+        } else if msg.content.starts_with("?invalidate") {
+            let Some(id_string) = msg.content.strip_prefix("?invalidate ") else {return;};
+            let Ok(id) = id_string.parse::<i64>() else {return;};
+
+            match sqlx::query("
+            UPDATE
+                submissions
+            SET
+                valid = false
+            WHERE
+                unix_time_stamp = $1;
+            ")
+            .bind(id)
+            .execute(&self.db)
+            .await {
+                Ok(_) => {
+                    let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(
+                        format!("Invalidated submission with ID: {}", id)
+                    )).await;
+                },
+                Err(err) => {
+                    let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
+                },
+            }
         }
     }
 }
