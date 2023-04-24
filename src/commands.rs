@@ -12,7 +12,8 @@ pub struct LeaderboardRow {
     pub player: String,
     pub position: i32,
     pub score: i32,
-    pub game: String
+    pub game: String,
+    pub unix_time_stamp: i64
 }
 
 impl LeaderboardRow {
@@ -130,7 +131,7 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
     if let CommandDataOptionValue::String(game) = game {
         match sqlx::query_as::<_, LeaderboardRow>("
             SELECT 
-                player,position,score,game
+                player,position,score,game,unix_time_stamp
             FROM
                 leaderboards
             WHERE
@@ -153,7 +154,7 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
         .bind(upper)
         .fetch_all(&bot.db)
         .await {
-            Ok(players) => players_to_formatted_embed(
+            Ok(players) => players_to_response(
                 bot,
                 command.user.avatar_url().unwrap_or_default(),
                 players, 
@@ -178,10 +179,10 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
     }
 }
 
-fn players_to_formatted_embed(bot: & Bot, avatar_url: String, players: Vec<LeaderboardRow>, game_name: String, lower: i64, upper: i64) -> CreateInteractionResponseData<'static> {
+fn players_to_response(bot: & Bot, avatar_url: String, players: Vec<LeaderboardRow>, game_name: String, lower: i64, upper: i64) -> CreateInteractionResponseData<'static> {
     let mut embed = CreateEmbed::default();
     embed.footer(|f|
-        f.text("Leaderboard Query")
+        f.text(format!("Submission ID: {}", players.get(0).and_then(|row| Some(row.unix_time_stamp.to_string())).unwrap_or_else(|| String::from("unknown"))))
         .icon_url(avatar_url));
 
     let now = Utc::now();
@@ -250,7 +251,7 @@ async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteractio
         if let CommandDataOptionValue::String(player_name) = player {
             match sqlx::query_as::<_, LeaderboardRow>("
                 SELECT 
-                    player,position,score,game
+                    player,position,score,game,unix_time_stamp
                 FROM
                     leaderboards
                 WHERE
@@ -271,7 +272,7 @@ async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteractio
                     .bind(player_name)
                     .fetch_all(&bot.db)
                     .await {
-                        Ok(leaderboards) => leaderboards_to_formatted_embed(
+                        Ok(leaderboards) => leaderboards_to_response(
                             command.user.avatar_url().unwrap_or_default().to_owned(),
                             leaderboards,
                             player_name.to_owned()),
@@ -292,10 +293,10 @@ async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteractio
         }
 }
 
-fn leaderboards_to_formatted_embed(avatar_url: String, leaderboards: Vec<LeaderboardRow>, player_name: String) -> CreateInteractionResponseData<'static> {
+fn leaderboards_to_response(avatar_url: String, leaderboards: Vec<LeaderboardRow>, player_name: String) -> CreateInteractionResponseData<'static> {
     let mut embed = CreateEmbed::default();
     embed.footer(|f|
-        f.text("Leaderboard Query")
+        f.text(format!("Submission ID: {}", leaderboards.get(0).and_then(|row| Some(row.unix_time_stamp.to_string())).unwrap_or_else(|| String::from("unknown"))))
         .icon_url(avatar_url));
     embed.timestamp(Utc::now().to_rfc3339());
 
