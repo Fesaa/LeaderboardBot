@@ -72,6 +72,10 @@ impl EventHandler for Bot {
             if !custom_id.contains("lb") {
                 return;
             }
+
+            let Some(old_embed) = component.message.embeds.get(0) else {return;};
+            let Some(footer) = &old_embed.footer else {return;};
+
             let mut message = CreateInteractionResponseData::default();
 
             let mut info = custom_id.split("_");
@@ -85,7 +89,7 @@ impl EventHandler for Bot {
             
                 let mut embed = CreateEmbed::default();
                 embed.footer(|f|
-                    f.text("Leaderboard Query")
+                    f.text(&footer.text)
                     .icon_url(component.user.avatar_url().unwrap_or_default()));
                 embed.timestamp(Utc::now().to_rfc3339());
                 embed.colour(Colour::from_rgb(106, 86, 246));
