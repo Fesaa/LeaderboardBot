@@ -1,8 +1,10 @@
+use std::vec;
+
 use chrono::Utc;
-use serenity::{model::prelude::{interaction::application_command::{CommandDataOption, CommandDataOptionValue, ApplicationCommandInteraction}, command::{CommandOptionType}}, builder::{CreateApplicationCommand, CreateEmbed}, utils::Colour};
+use serenity::{model::prelude::{interaction::application_command::{CommandDataOption, CommandDataOptionValue, ApplicationCommandInteraction}, command::{CommandOptionType}}, builder::{CreateApplicationCommand, CreateEmbed, CreateInteractionResponseData}, utils::Colour};
 use sqlx::{FromRow};
 
-use crate::{Bot, common::default_embed_from_content};
+use crate::{Bot, common::{default_embed_from_content}};
 
 
 #[derive(FromRow)]
@@ -34,16 +36,24 @@ impl LeaderboardRow {
 
 }
 
-pub async fn run(bot: &Bot, command: &ApplicationCommandInteraction) -> CreateEmbed {
+pub async fn run<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction) -> CreateInteractionResponseData<'a> {
     let options = &command.data.options;
     if let Some(sub_option) = options.get(0) {
         match sub_option.name.as_str() {
             "all" => player_command(bot, &command, &sub_option.options).await,
             "game" => leaderboards_command(bot, &command, &sub_option.options).await,
-            _ => default_embed_from_content(&command, String::from("Not a valid sub command. What happened here?"), Colour::RED)
+            _ => default_embed_from_content(
+                &command.user.name,
+                &command.user.avatar_url().unwrap_or_default(),
+                String::from("Not a valid sub command. What happened here?"),
+                Colour::RED)
         }
     } else {
-        default_embed_from_content(&command, String::from("Not a valid sub command. What happened here?"), Colour::RED)
+        default_embed_from_content(
+            &command.user.name,
+            &command.user.avatar_url().unwrap_or_default(),
+            String::from("Not a valid sub command. What happened here?"),
+            Colour::RED)
     }
     }
 
@@ -96,7 +106,7 @@ pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicatio
             })
 }
 
-async fn leaderboards_command(bot: &Bot, command: &ApplicationCommandInteraction, option: &[CommandDataOption]) -> CreateEmbed {
+async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction, option: &'a [CommandDataOption]) -> CreateInteractionResponseData<'a> {
     let game = option
         .get(0)
         .expect("There should be a game")
@@ -108,10 +118,14 @@ async fn leaderboards_command(bot: &Bot, command: &ApplicationCommandInteraction
         if let Some(CommandDataOptionValue::Integer(i)) = option.get(1).unwrap().resolved.as_ref() {
             i
         } else {
-            return default_embed_from_content(command, String::from("Integer was not an integer?"), Colour::RED);
+            return default_embed_from_content(
+                &command.user.name,
+                &command.user.avatar_url().unwrap_or_default(), 
+                String::from("Integer was not an integer?"),
+                Colour::RED);
         }
         };
-    let upper = if lower + 9 > 200 {200} else {lower + 9};
+    let upper = 200;
 
     if let CommandDataOptionValue::String(game) = game {
         match sqlx::query_as::<_, LeaderboardRow>("
@@ -140,46 +154,85 @@ async fn leaderboards_command(bot: &Bot, command: &ApplicationCommandInteraction
             ORDER BY
                 position
             ASC;")
-        .bind(leaderboard_value_to_database_name(game))
+        .bind(leaderboard_value_to_database_name(game.to_owned()))
         .bind(lower)
         .bind(upper)
         .fetch_all(&bot.db)
         .await {
-            Ok(players) => players_to_formatted_embed(command, players, game, lower, upper),
+            Ok(players) => players_to_formatted_embed(
+                bot,
+                command.user.avatar_url().unwrap_or_default(),
+                players, 
+                game.to_owned(),
+                lower.to_owned(),
+                upper),
             Err(err) => {
                 println!("{}", err.to_string());
-                default_embed_from_content(command, String::from("An error occurred trying to fetch the leaderboards. Contact Fesa if this persists"), Colour::RED)
+                default_embed_from_content(
+                    &command.user.name,
+                    &command.user.avatar_url().unwrap_or_default(),
+                    String::from("An error occurred trying to fetch the leaderboards. Contact Fesa if this persists"),
+                    Colour::RED)
             },
         }
     } else {
-        default_embed_from_content(command, String::from("Not a valid sub command. What happened here?"), Colour::RED)
+        default_embed_from_content(
+            &command.user.name,
+            &command.user.avatar_url().unwrap_or_default(),
+            String::from("Not a valid sub command. What happened here?"),
+        Colour::RED)
     }
 }
 
-fn players_to_formatted_embed(command: &ApplicationCommandInteraction, players: Vec<LeaderboardRow>, game_name: &String, lower: &i64, upper: i64) -> CreateEmbed {
+fn players_to_formatted_embed(bot: & Bot, avatar_url: String, players: Vec<LeaderboardRow>, game_name: String, lower: i64, upper: i64) -> CreateInteractionResponseData<'static> {
     let mut embed = CreateEmbed::default();
     embed.footer(|f|
         f.text("Leaderboard Query")
-        .icon_url(command.user.avatar_url().unwrap_or_default()));
-    embed.timestamp(Utc::now().to_rfc3339());
+        .icon_url(avatar_url));
+
+    let now = Utc::now();
+    embed.timestamp(now.to_rfc3339());
+
+    let mut message = CreateInteractionResponseData::default();
 
     if players.len() == 0 {
         embed.colour(Colour::RED);
-        embed.description(String::from(format!("**{}** currently doesn't have any players on it between {} and {}.", game_name.to_owned(), lower, upper)));
-        return embed;
-    }
+        embed.description(String::from(format!("**{}** currently doesn't have any players on it between {} and {}.", game_name, lower, upper)));
+    } else {
+        embed.colour(Colour::from_rgb(106, 86, 246));
 
-    embed.colour(Colour::from_rgb(106, 86, 246));
-    let mut s = String::from(format!("Players on {} between {} and {}:", leaderboard_value_to_database_name(game_name), lower, upper));
-    for row in players {
-        s += &row.get_player_string();
-    }
-    embed.description(s);
+        let mut pages: Vec<String> = vec![];
+        let pretty_name = leaderboard_value_to_database_name(game_name);
 
-    embed
+        for low in (lower..200).step_by(10) {
+            if low > 200 {
+                break;
+            }
+            let up = if low + 9 < 200 {low + 9} else {200};
+            let mut s = String::from(format!("Players on {} between {} and {}:", pretty_name, low, up));
+            for row in &players[((low-1) as usize)..(up as usize)] {
+                s += &row.get_player_string();
+            }
+            pages.push(s);
+        }
+        embed.description(&pages[0]);
+        if let Ok(mut data) = bot.running_paginator.lock() {
+            let next_button_id = format!("{}_next_lb_{}", now.timestamp_millis(), 1);
+
+            message.components(|component| {
+                component.create_action_row(|action_row| {
+                    action_row.create_button(|b| b.custom_id(&next_button_id).emoji('▶'))
+                })
+            });
+
+            data.insert(now.timestamp_millis() as u64, pages);
+        }
+    }
+    message.add_embed(embed);
+    message
 }
 
-fn leaderboard_value_to_database_name(game: &String) -> String {
+fn leaderboard_value_to_database_name(game: String) -> String {
     match game.as_str() {
         "tew"  => String::from("Team EggWars"),
         "tew2" => String::from("Team EggWars Season 2"),
@@ -192,7 +245,7 @@ fn leaderboard_value_to_database_name(game: &String) -> String {
     }
 }
 
-async fn player_command(bot: &Bot, command: &ApplicationCommandInteraction, option: &[CommandDataOption]) -> CreateEmbed {
+async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction, option: &'a [CommandDataOption]) -> CreateInteractionResponseData<'a> {
     let player = option
         .get(0)
         .expect("There should be a player")
@@ -224,36 +277,47 @@ async fn player_command(bot: &Bot, command: &ApplicationCommandInteraction, opti
                     .bind(player_name)
                     .fetch_all(&bot.db)
                     .await {
-                        Ok(leaderboards) => leaderboards_to_formatted_embed(command, leaderboards, player_name),
+                        Ok(leaderboards) => leaderboards_to_formatted_embed(
+                            command.user.avatar_url().unwrap_or_default().to_owned(),
+                            leaderboards,
+                            player_name.to_owned()),
                         Err(err) => {
                             println!("{}", err.to_string());
-                            default_embed_from_content(command, String::from("An error occurred trying to fetch the leaderboards. Contact Fesa if this persists"), Colour::RED)
+                            default_embed_from_content(
+                                &command.user.name,
+                                &command.user.avatar_url().unwrap_or_default(),
+                                String::from("An error occurred trying to fetch the leaderboards. Contact Fesa if this persists"),
+                                Colour::RED)
                         }
                     }
         } else {
-            default_embed_from_content(command, String::from("Not a valid sub command. What happened here?"), Colour::RED)
+            default_embed_from_content(&command.user.name,
+                &command.user.avatar_url().unwrap_or_default(),
+                String::from("Not a valid sub command. What happened here?"), 
+                Colour::RED)
         }
 }
 
-fn leaderboards_to_formatted_embed(command: &ApplicationCommandInteraction, leaderboards: Vec<LeaderboardRow>, player_name: &String) -> CreateEmbed {
+fn leaderboards_to_formatted_embed(avatar_url: String, leaderboards: Vec<LeaderboardRow>, player_name: String) -> CreateInteractionResponseData<'static> {
     let mut embed = CreateEmbed::default();
     embed.footer(|f|
         f.text("Leaderboard Query")
-        .icon_url(command.user.avatar_url().unwrap_or_default()));
+        .icon_url(avatar_url));
     embed.timestamp(Utc::now().to_rfc3339());
 
     if leaderboards.len() == 0 {
         embed.colour(Colour::RED);
-        embed.description(String::from(format!("**{}** currently isn't on any leaderboard.", player_name.to_owned())));
-        return embed;
+        embed.description(String::from(format!("**{}** currently isn't on any leaderboard.", player_name)));
+    } else {
+        embed.colour(Colour::from_rgb(106, 86, 246));
+        let mut s = String::from(format!("**{}** leaderboards ({}):", player_name, &leaderboards.len()));
+        for row in leaderboards {
+            s += &row.get_leaderboard_string();
+        }
+        embed.description(s);
     }
 
-    embed.colour(Colour::from_rgb(106, 86, 246));
-    let mut s = String::from(format!("**{}** leaderboards ({}):", player_name.to_owned(), &leaderboards.len()));
-    for row in leaderboards {
-        s += &row.get_leaderboard_string();
-    }
-    embed.description(s);
-
-    embed
+    let mut message = CreateInteractionResponseData::default();
+    message.add_embed(embed);
+    message
 }
