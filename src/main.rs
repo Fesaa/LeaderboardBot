@@ -105,7 +105,7 @@ impl EventHandler for Bot {
                         if index != 0 {
                             action_row.create_button(|b| b.custom_id(&prev_button_id).emoji('◀'));
                         }
-                        if index != max_len {
+                        if index != max_len - 1 {
                             action_row.create_button(|b| b.custom_id(&next_button_id).emoji('▶'));
                         }
                         action_row
