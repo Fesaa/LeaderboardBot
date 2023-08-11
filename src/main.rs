@@ -199,6 +199,8 @@ impl EventHandler for Bot {
                     let _ = msg.channel_id.send_message(&ctx.http, |m| m.content(err.to_string())).await;
                 },
             }
+        } else if msg.content.starts_with("?hi") {
+            let _ = msg.channel_id.send_message(&ctx.http, |m| m.content("Hello! <3")).await;
         }
     }
 }
