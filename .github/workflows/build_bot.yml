@@ -1,9 +1,9 @@
-name: Cubepanion API Build
+name: Leaderboard Bot Build
 
 on:
   push:
     branches: [ "master", "main" ]
-    paths: ["src/**", ".github/workflows/build_bot.yml"]
+    paths: ["src/**"]
   workflow_dispatch:
 
 jobs:
