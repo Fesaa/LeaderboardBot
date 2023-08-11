@@ -1,0 +1,28 @@
+name: Leaderboard Bot Build
+
+on:
+  push:
+    branches: [ "master", "main" ]
+    paths: ["src/**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build Rust Binary
+        run: cargo build --release
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Rust-Binary
+          path: target/release/leaderboard_bot

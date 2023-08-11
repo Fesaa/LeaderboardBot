@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::{Mutex, Arc}, time::Duration};
+use std::{collections::HashMap, sync::{Mutex, Arc}, time::Duration, fs::File, io::Read};
 
 use chrono::Utc;
-use serenity::{Client, prelude::{GatewayIntents, EventHandler, Context}, async_trait, model::prelude::{command::{Command}, Ready, GuildId, Message, component::ActionRowComponent}, utils::Colour, builder::{CreateEmbed, CreateInteractionResponseData, CreateComponents}};
+use serenity::{Client, prelude::{GatewayIntents, EventHandler, Context}, async_trait, model::prelude::{command::Command, Ready, GuildId, Message, component::ActionRowComponent}, utils::Colour, builder::{CreateEmbed, CreateInteractionResponseData, CreateComponents}};
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio::time::sleep;
@@ -208,10 +208,11 @@ impl EventHandler for Bot {
 
 
 #[tokio::main]
-async fn main() {
-
-    let config_file = include_str!("../config.toml");
-    let config = config_file.parse::<Value>().unwrap();
+async fn main() -> Result<(), std::io::Error>  {
+    let mut file = File::open(String::from("config.toml"))?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let config = content.parse::<Value>().unwrap();
 
     let database_url = config["database_url"].as_str().unwrap();
     let pool = PgPoolOptions::new()
@@ -233,4 +234,6 @@ async fn main() {
         if let Err(why) = client.start().await {
             println!("Client error: {:?}", why);
         }
+    
+    Ok(())
 }
