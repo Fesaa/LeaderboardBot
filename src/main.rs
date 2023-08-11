@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::{Mutex, Arc}, time::Duration};
 
 use chrono::Utc;
-use serenity::{Client, prelude::{GatewayIntents, EventHandler, Context}, async_trait, model::prelude::{command::{Command}, Ready, GuildId, Message, component::ActionRowComponent}, utils::Colour, builder::{CreateEmbed, CreateInteractionResponseData, CreateComponents}};
+use serenity::{Client, prelude::{GatewayIntents, EventHandler, Context}, async_trait, model::prelude::{command::Command, Ready, GuildId, Message, component::ActionRowComponent}, utils::Colour, builder::{CreateEmbed, CreateInteractionResponseData, CreateComponents}};
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio::time::sleep;
