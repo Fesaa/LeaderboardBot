@@ -51,7 +51,7 @@ impl LeaderboardRow {
                 String::from("wins")
             }
             "Free For All" => String::from("kills"),
-            "Parkour" | "Snowman Surival" => String::from("medals"),
+            "Parkour" | "Snowman Survival" => String::from("medals"),
             &_ => String::from("unknown"),
         }
     }

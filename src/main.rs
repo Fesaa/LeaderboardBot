@@ -21,7 +21,7 @@ impl EventHandler for Bot {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::ApplicationCommand(command) = interaction {
             let content = match &command.data.name.as_str() {
-                &"leaderboard" => commands::run(self.clone(), &command).await,
+                &"leaderboard" => commands::run(self, &command).await,
                 _ => common::default_embed_from_content(
                     &command.user.name,
                     &command.user.avatar_url().unwrap_or_default(),
