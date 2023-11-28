@@ -1,11 +1,19 @@
 use std::vec;
 
 use chrono::Utc;
-use serenity::{model::prelude::{interaction::application_command::{CommandDataOption, CommandDataOptionValue, ApplicationCommandInteraction}, command::{CommandOptionType}}, builder::{CreateApplicationCommand, CreateEmbed, CreateInteractionResponseData}, utils::Colour};
-use sqlx::{FromRow};
+use serenity::{
+    builder::{CreateApplicationCommand, CreateEmbed, CreateInteractionResponseData},
+    model::prelude::{
+        command::CommandOptionType,
+        interaction::application_command::{
+            ApplicationCommandInteraction, CommandDataOption, CommandDataOptionValue,
+        },
+    },
+    utils::Colour,
+};
+use sqlx::FromRow;
 
-use crate::{Bot, common::{default_embed_from_content}};
-
+use crate::{common::default_embed_from_content, Bot};
 
 #[derive(FromRow)]
 pub struct LeaderboardRow {
@@ -13,31 +21,46 @@ pub struct LeaderboardRow {
     pub position: i32,
     pub score: i32,
     pub game: String,
-    pub unix_time_stamp: i64
+    pub unix_time_stamp: i64,
 }
 
 impl LeaderboardRow {
-
     pub fn get_leaderboard_string(&self) -> String {
-        format!("\n- {} [{}]: {} {}", self.game, self.position, self.score, self.game_to_score_kind())
+        format!(
+            "\n- {} [{}]: {} {}",
+            self.game,
+            self.position,
+            self.score,
+            self.game_to_score_kind()
+        )
     }
 
     pub fn get_player_string(&self) -> String {
-        format!("\n- {} [{}]: {} {}", self.player.replace("_", "\\_"), self.position, self.score, self.game_to_score_kind())
+        format!(
+            "\n- {} [{}]: {} {}",
+            self.player.replace("_", "\\_"),
+            self.position,
+            self.score,
+            self.game_to_score_kind()
+        )
     }
 
     fn game_to_score_kind(&self) -> String {
         match self.game.as_str() {
-            "Team EggWars" | "Solo SkyWars" | "Team EggWars Season 2" | "Lucky Islands" => String::from("wins"),
+            "Team EggWars" | "Solo SkyWars" | "Team EggWars Season 2" | "Lucky Islands" => {
+                String::from("wins")
+            }
             "Free For All" => String::from("kills"),
-            "Parkour" => String::from("medals"),
-            &_ => String::from("unknown")
+            "Parkour" | "Snowman Surival" => String::from("medals"),
+            &_ => String::from("unknown"),
         }
     }
-
 }
 
-pub async fn run<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction) -> CreateInteractionResponseData<'a> {
+pub async fn run<'a>(
+    bot: &Bot,
+    command: &'a ApplicationCommandInteraction,
+) -> CreateInteractionResponseData<'a> {
     let options = &command.data.options;
     if let Some(sub_option) = options.get(0) {
         match sub_option.name.as_str() {
@@ -47,16 +70,18 @@ pub async fn run<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction) -> C
                 &command.user.name,
                 &command.user.avatar_url().unwrap_or_default(),
                 String::from("Not a valid sub command. What happened here?"),
-                Colour::RED)
+                Colour::RED,
+            ),
         }
     } else {
         default_embed_from_content(
             &command.user.name,
             &command.user.avatar_url().unwrap_or_default(),
             String::from("Not a valid sub command. What happened here?"),
-            Colour::RED)
+            Colour::RED,
+        )
     }
-    }
+}
 
 pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
     command
@@ -76,7 +101,7 @@ pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicatio
                         .min_length(2)
                         .max_length(16)
                 })
-            })
+        })
         .create_option(|option| {
             option
                 .name("game")
@@ -93,6 +118,7 @@ pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicatio
                         .add_string_choice("Solo Lucky Islands", "s_li")
                         .add_string_choice("Free For All", "ffa")
                         .add_string_choice("Parkour", "parkour")
+                        .add_string_choice("Snowman Survival", "ss")
                         .required(true)
                 })
                 .create_sub_option(|suboption| {
@@ -104,10 +130,14 @@ pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicatio
                         .max_int_value(200)
                         .required(false)
                 })
-            })
+        })
 }
 
-async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction, option: &'a [CommandDataOption]) -> CreateInteractionResponseData<'a> {
+async fn leaderboards_command<'a>(
+    bot: &Bot,
+    command: &'a ApplicationCommandInteraction,
+    option: &'a [CommandDataOption],
+) -> CreateInteractionResponseData<'a> {
     let game = option
         .get(0)
         .expect("There should be a game")
@@ -115,21 +145,25 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
         .as_ref()
         .expect("Expected String");
 
-    let lower =if let None = option.get(1) {&1} else {
+    let lower = if let None = option.get(1) {
+        &1
+    } else {
         if let Some(CommandDataOptionValue::Integer(i)) = option.get(1).unwrap().resolved.as_ref() {
             i
         } else {
             return default_embed_from_content(
                 &command.user.name,
-                &command.user.avatar_url().unwrap_or_default(), 
+                &command.user.avatar_url().unwrap_or_default(),
                 String::from("Integer was not an integer?"),
-                Colour::RED);
+                Colour::RED,
+            );
         }
-        };
+    };
     let upper = 200;
 
     if let CommandDataOptionValue::String(game) = game {
-        match sqlx::query_as::<_, LeaderboardRow>("
+        match sqlx::query_as::<_, LeaderboardRow>(
+            "
             SELECT 
                 player,position,score,game,unix_time_stamp
             FROM
@@ -148,19 +182,22 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
                     game = $1)
             ORDER BY
                 position
-            ASC;")
+            ASC;",
+        )
         .bind(leaderboard_value_to_database_name(game.to_owned()))
         .bind(lower)
         .bind(upper)
         .fetch_all(&bot.db)
-        .await {
+        .await
+        {
             Ok(players) => players_to_response(
                 bot,
                 command.user.avatar_url().unwrap_or_default(),
-                players, 
+                players,
                 game.to_owned(),
                 lower.to_owned(),
-                upper),
+                upper,
+            ),
             Err(err) => {
                 println!("{}", err.to_string());
                 default_embed_from_content(
@@ -168,22 +205,37 @@ async fn leaderboards_command<'a>(bot: &Bot, command: &'a ApplicationCommandInte
                     &command.user.avatar_url().unwrap_or_default(),
                     String::from("An error occurred trying to fetch the leaderboards. Contact Fesa if this persists"),
                     Colour::RED)
-            },
+            }
         }
     } else {
         default_embed_from_content(
             &command.user.name,
             &command.user.avatar_url().unwrap_or_default(),
             String::from("Not a valid sub command. What happened here?"),
-        Colour::RED)
+            Colour::RED,
+        )
     }
 }
 
-fn players_to_response(bot: & Bot, avatar_url: String, players: Vec<LeaderboardRow>, game_name: String, lower: i64, upper: i64) -> CreateInteractionResponseData<'static> {
+fn players_to_response(
+    bot: &Bot,
+    avatar_url: String,
+    players: Vec<LeaderboardRow>,
+    game_name: String,
+    lower: i64,
+    upper: i64,
+) -> CreateInteractionResponseData<'static> {
     let mut embed = CreateEmbed::default();
-    embed.footer(|f|
-        f.text(format!("Submission ID: {}", players.get(0).and_then(|row| Some(row.unix_time_stamp.to_string())).unwrap_or_else(|| String::from("unknown"))))
-        .icon_url(avatar_url));
+    embed.footer(|f| {
+        f.text(format!(
+            "Submission ID: {}",
+            players
+                .get(0)
+                .and_then(|row| Some(row.unix_time_stamp.to_string()))
+                .unwrap_or_else(|| String::from("unknown"))
+        ))
+        .icon_url(avatar_url)
+    });
 
     let now = Utc::now();
     embed.timestamp(now.to_rfc3339());
@@ -192,7 +244,10 @@ fn players_to_response(bot: & Bot, avatar_url: String, players: Vec<LeaderboardR
 
     if players.len() == 0 {
         embed.colour(Colour::RED);
-        embed.description(String::from(format!("**{}** currently doesn't have any players on it between {} and {}.", game_name, lower, upper)));
+        embed.description(String::from(format!(
+            "**{}** currently doesn't have any players on it between {} and {}.",
+            game_name, lower, upper
+        )));
     } else {
         embed.colour(Colour::from_rgb(106, 86, 246));
 
@@ -203,9 +258,12 @@ fn players_to_response(bot: & Bot, avatar_url: String, players: Vec<LeaderboardR
             if low > 200 {
                 break;
             }
-            let up = if low + 9 < 200 {low + 9} else {200};
-            let mut s = String::from(format!("Players on {} between {} and {}:", pretty_name, low, up));
-            for row in &players[((low-1) as usize)..(up as usize)] {
+            let up = if low + 9 < 200 { low + 9 } else { 200 };
+            let mut s = String::from(format!(
+                "Players on {} between {} and {}:",
+                pretty_name, low, up
+            ));
+            for row in &players[((low - 1) as usize)..(up as usize)] {
                 s += &row.get_player_string();
             }
             pages.push(s);
@@ -229,18 +287,23 @@ fn players_to_response(bot: & Bot, avatar_url: String, players: Vec<LeaderboardR
 
 fn leaderboard_value_to_database_name(game: String) -> String {
     match game.as_str() {
-        "tew"  => String::from("Team EggWars"),
+        "tew" => String::from("Team EggWars"),
         "tew2" => String::from("Team EggWars Season 2"),
         "s_sw" => String::from("Solo SkyWars"),
         "s_li" => String::from("Lucky Islands"),
         "ffa" => String::from("Free For All"),
         "parkour" => String::from("Parkour"),
+        "ss" => String::from("Snowman Survival"),
 
-        &_ => String::from("Unknown")
+        &_ => String::from("Unknown"),
     }
 }
 
-async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteraction, option: &'a [CommandDataOption]) -> CreateInteractionResponseData<'a> {
+async fn player_command<'a>(
+    bot: &Bot,
+    command: &'a ApplicationCommandInteraction,
+    option: &'a [CommandDataOption],
+) -> CreateInteractionResponseData<'a> {
     let player = option
         .get(0)
         .expect("There should be a player")
@@ -248,8 +311,9 @@ async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteractio
         .as_ref()
         .expect("Expected String");
 
-        if let CommandDataOptionValue::String(player_name) = player {
-            match sqlx::query_as::<_, LeaderboardRow>("
+    if let CommandDataOptionValue::String(player_name) = player {
+        match sqlx::query_as::<_, LeaderboardRow>(
+            "
                 SELECT 
                     player,position,score,game,unix_time_stamp
                 FROM
@@ -268,44 +332,67 @@ async fn player_command<'a>(bot: &Bot, command: &'a ApplicationCommandInteractio
                     player = $1
                 ORDER BY
                     position
-                ASC;")
-                    .bind(player_name)
-                    .fetch_all(&bot.db)
-                    .await {
-                        Ok(leaderboards) => leaderboards_to_response(
-                            command.user.avatar_url().unwrap_or_default().to_owned(),
-                            leaderboards,
-                            player_name.to_owned()),
-                        Err(err) => {
-                            println!("{}", err.to_string());
-                            default_embed_from_content(
+                ASC;",
+        )
+        .bind(player_name)
+        .fetch_all(&bot.db)
+        .await
+        {
+            Ok(leaderboards) => leaderboards_to_response(
+                command.user.avatar_url().unwrap_or_default().to_owned(),
+                leaderboards,
+                player_name.to_owned(),
+            ),
+            Err(err) => {
+                println!("{}", err.to_string());
+                default_embed_from_content(
                                 &command.user.name,
                                 &command.user.avatar_url().unwrap_or_default(),
                                 String::from("An error occurred trying to fetch the leaderboards. Contact Fesa if this persists"),
                                 Colour::RED)
-                        }
-                    }
-        } else {
-            default_embed_from_content(&command.user.name,
-                &command.user.avatar_url().unwrap_or_default(),
-                String::from("Not a valid sub command. What happened here?"), 
-                Colour::RED)
+            }
         }
+    } else {
+        default_embed_from_content(
+            &command.user.name,
+            &command.user.avatar_url().unwrap_or_default(),
+            String::from("Not a valid sub command. What happened here?"),
+            Colour::RED,
+        )
+    }
 }
 
-fn leaderboards_to_response(avatar_url: String, leaderboards: Vec<LeaderboardRow>, player_name: String) -> CreateInteractionResponseData<'static> {
+fn leaderboards_to_response(
+    avatar_url: String,
+    leaderboards: Vec<LeaderboardRow>,
+    player_name: String,
+) -> CreateInteractionResponseData<'static> {
     let mut embed = CreateEmbed::default();
-    embed.footer(|f|
-        f.text(format!("Submission ID: {}", leaderboards.get(0).and_then(|row| Some(row.unix_time_stamp.to_string())).unwrap_or_else(|| String::from("unknown"))))
-        .icon_url(avatar_url));
+    embed.footer(|f| {
+        f.text(format!(
+            "Submission ID: {}",
+            leaderboards
+                .get(0)
+                .and_then(|row| Some(row.unix_time_stamp.to_string()))
+                .unwrap_or_else(|| String::from("unknown"))
+        ))
+        .icon_url(avatar_url)
+    });
     embed.timestamp(Utc::now().to_rfc3339());
 
     if leaderboards.len() == 0 {
         embed.colour(Colour::RED);
-        embed.description(String::from(format!("**{}** currently isn't on any leaderboard.", player_name)));
+        embed.description(String::from(format!(
+            "**{}** currently isn't on any leaderboard.",
+            player_name
+        )));
     } else {
         embed.colour(Colour::from_rgb(106, 86, 246));
-        let mut s = String::from(format!("**{}** leaderboards ({}):", player_name, &leaderboards.len()));
+        let mut s = String::from(format!(
+            "**{}** leaderboards ({}):",
+            player_name,
+            &leaderboards.len()
+        ));
         for row in leaderboards {
             s += &row.get_leaderboard_string();
         }
